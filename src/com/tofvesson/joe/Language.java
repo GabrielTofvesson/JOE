@@ -4,35 +4,97 @@ import com.sun.istack.internal.Nullable;
 
 import java.io.*;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 
+@SuppressWarnings({"WeakerAccess", "unused"})
 public class Language {
 
     private final String language, languageID;
+    private Map<String, String> data = new HashMap<>();
+    private final File f;
 
-
-    private Language(String language, String languageID){ this.language = language; this.languageID = languageID; }
+    private Language(File f, String language, String languageID){ this.f = f; this.language = language; this.languageID = languageID; }
+    private Language(){ f = null; language=""; languageID=""; }
 
     public String getLanguage(){ return language; }
     public String getLanguageIdentifier(){ return languageID; }
+    public String get(String key) {
+        if(f==null) return "";
+        if(data.containsKey(key) || !f.isFile()) return data.get(key);
+        try {
+            InputStream i = new FileInputStream(f);
+            readLine(i);
+            String s, s1;
+            while(!(s1=getKey(s=readLine(i))).equals(key))
+                if(i.available()<=0) break;
+            if(s1.equals(key)){
+                data.put(s1, s=getValue(s));
+                return s;
+            }
+        } catch (IOException ignored) {}
+        return null;
+    }
+    public int getInt(String key){
+        String s = get(key);
+        if(s==null) return 0;
+        try{
+            return Integer.parseInt(s);
+        }catch(Exception e){ return 0; }
+    }
+    public double getDouble(String key){
+        String s = get(key);
+        if(s==null) return 0;
+        try{
+            return Double.parseDouble(s);
+        }catch(Exception e){ return 0; }
+    }
+    public boolean getBoolean(String key, boolean defaultValue){
+        String s;
+
+        return (s = get(key))==null||(!s.equalsIgnoreCase("true")&&!s.equals("1")&&!s.equalsIgnoreCase("false")&&
+                !s.equals("0"))?defaultValue:(s.equalsIgnoreCase("true")||s.equals("1"))&&(!s.equalsIgnoreCase("false")||!s.equals("0"));
+    }
 
     /**
-     * A safe version of {@link #parse(File)} that will simply return <b>null</b> if given file isn't a valid language file.
+     * Parses data aggressively.
      * @param f File to read from.
      * @return Language or null.
      */
     public static @Nullable Language safeParse(File f){
-        try{ return parse(f); }catch(Exception ignored){}
+        return safeParse(f, true);
+    }
+
+    /**
+     * A safe version of {@link #parse(File, boolean)} that will simply return <b>null</b> if given file isn't a valid language file.
+     * @param f File to read from.
+     * @param aggressiveParsing Whether or not to aggressively load and handle data.
+     * @return Language or null.
+     */
+    public static @Nullable Language safeParse(File f, boolean aggressiveParsing){
+        try{ return parse(f, aggressiveParsing); }catch(Exception ignored){}
         return null;
+    }
+
+    /**
+     * Parses the given file into a usable language very aggressively.
+     * @param f File to parse.
+     * @return Language.
+     * @throws NotALanguageFileException Thrown if file isn't a valid language file.
+     */
+    public static Language parse(File f) throws NotALanguageFileException, IOException, MalformedLanguageException {
+        return parse(f, true);
     }
 
     /**
      * Parses the given file into a usable language.
      * @param f File to parse.
+     * @param aggressiveParsing Whether or not to aggressively load and handle data.
      * @return Language.
      * @throws NotALanguageFileException Thrown if file isn't a valid language file.
      */
-    public static Language parse(File f) throws NotALanguageFileException, MalformedLanguageException, IOException {
-        String s="";
+    public static Language parse(File f, boolean aggressiveParsing) throws NotALanguageFileException, MalformedLanguageException, IOException {
+        String s;
 
 
         // Is file existent?
@@ -41,7 +103,6 @@ public class Language {
 
         // Does file meet preliminary requirements?
         InputStream i = new FileInputStream(f);
-        int c;
         s = ignoreSpaces(readLine(i));
         i.close();
         for(int j=0; j<s.length(); ++j)
@@ -56,6 +117,8 @@ public class Language {
         if(start==-1 || end==-1 || start>=end) throw new NotALanguageFileException("Malformed language name definition: \""+s+"\"");
 
 
+        Language l = new Language(f, s.substring(start, end), f.getName().substring(0, f.getName().lastIndexOf('.')));
+
         // Check language integrity
         ArrayList<String> keys = new ArrayList<>();
         i = new FileInputStream(f);
@@ -65,20 +128,24 @@ public class Language {
         int lineCount = 1;
         while(i.available()>0){
             read = (char) i.read();
-            if(firstLine && read=='\n'){
-                firstLine=false;
+            if(read==10) {
+                if (firstLine) firstLine = false;
                 continue;
             }
-            subVerify = read+readLine(i);
+            if(read==' ') subVerify = "";
+            else subVerify = ""+read;
+            subVerify += truncateLeadingSpaces(readLine(i));
             ++lineCount;
+            if(subVerify.toCharArray().length==0) continue;
             if(!isValidKVPair(subVerify)) throw new MalformedLanguageException("Error found at line "+lineCount
-                    +" : \""+subVerify+"\"\nInvalid key-value pair detected! Note that ':' in the keys or values must be escaped with '\\'");
-            String s1 = getKey(truncateLeadingSpaces(subVerify));
+                        +" of "+f.getAbsolutePath()+". Invalid key-value pair detected! Note that ':' in the keys or values must be escaped with '\'");
+            String s1 = getKey(subVerify);
             if(keys.contains(s1)) throw new MalformedLanguageException("Error found at line "+lineCount+" : "
                     +subVerify+"\nDuplicate key detected!");
-            keys.add(getKey(truncateLeadingSpaces(subVerify)));
+            keys.add(s1);
+            if(aggressiveParsing) l.data.put(s1, getValue(subVerify));
         }
-        return new Language(s.substring(start, end), f.getName().substring(0, f.getName().lastIndexOf('.')));
+        return l;
     }
 
     private static String ignoreSpaces(String s){
@@ -90,29 +157,15 @@ public class Language {
     private static String truncateLeadingSpaces(String s){
         char[] str = s.toCharArray();
         for(int i = 0; i<str.length; ++i) if(str[i]!=' ' && str[i]!='\t') return s.substring(i);
-        return s;
+        return "";
     }
 
     private static String readLine(InputStream i){
         String s = "";
         char j;
-        try{ while(i.available()>0 && (j=(char)i.read())!='\n') s+=j; }catch(IOException ignored){}
+        try{ while(i.available()>0 && (j=(char)i.read())!='\n' && j!=13) s+=j; }catch(IOException ignored){}
         return s;
     }
-
-    private static int amountOf(char toFind, String in){
-        char[] c = in.toCharArray();
-        int ctr = 0;
-        for(char c1 : c) if(c1==toFind) ++ctr;
-        return ctr;
-    }
-
-    private static Type getTypeForString(String name){
-        for(Type t : Type.values())
-            if(name.equalsIgnoreCase(t.name())) return t;
-        return null;
-    }
-
     private static boolean isValidKVPair(String data){
         boolean colonFound = false;
         char[] str = truncateLeadingSpaces(data).toCharArray();
@@ -135,6 +188,19 @@ public class Language {
             if (i != 0){
                 if(str[i]==':' && prev!='\\')
                     return data.substring(0, i);
+            }
+            prev = str[i];
+        }
+        return data;
+    }
+
+    private static String getValue(String data){
+        char[] str = truncateLeadingSpaces(data).toCharArray();
+        char prev = 0;
+        for(int i = str.length-1; i>0; --i) {
+            if (i != str.length-1){
+                if(str[i]!='\\' && prev==':')
+                    return data.substring(i+2, str.length);
             }
             prev = str[i];
         }
