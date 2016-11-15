@@ -25,11 +25,25 @@ public class Language {
         try {
             InputStream i = new FileInputStream(f);
             readLine(i);
-            String s, s1;
-            while(!(s1=getKey(s=readLine(i))).equals(key))
-                if(i.available()<=0) break;
+            String s, s1="";
+            while(i.available()>0){
+                if((s1=readLine(i)).equals(key)){
+                    char[] c = s1.toCharArray();
+                    char n, m=0, k=0;
+                    for(int o = 0; o<c.length; ++o){
+                        n=m;
+                        m=k;
+                        k=c[o];
+                        if(n!='\\' && m=='/' && k=='/'){
+                            s1 = s1.substring(0, o-1);
+                            break;
+                        }else if(n=='\\' && m=='/' && k=='/') s1 = s1.substring(0, o-2) + s1.substring(o-1, s1.length());
+                    }
+                    if(s1.equals(key)) break;
+                }
+            }
             if(s1.equals(key)){
-                data.put(s1, s=getValue(s));
+                data.put(s1, s=getValue(s1));
                 return s;
             }
         } catch (IOException ignored) {}
@@ -125,18 +139,27 @@ public class Language {
         String subVerify;
         boolean firstLine = true;
         char read;
-        int lineCount = 1;
+        int lineCount = 0;
         while(i.available()>0){
-            read = (char) i.read();
-            if(read==10) {
-                if (firstLine) firstLine = false;
+            subVerify = truncateLeadingSpaces(readLine(i));
+            if(firstLine){
+                ++lineCount;
+                firstLine = false;
                 continue;
             }
-            if(read==' ') subVerify = "";
-            else subVerify = ""+read;
-            subVerify += truncateLeadingSpaces(readLine(i));
+            char[] c = subVerify.toCharArray();
+            char n, m=0, k=0;
+            for(int o = 0; o<c.length; ++o){
+                n=m;
+                m=k;
+                k=c[o];
+                if(n!='\\' && m=='/' && k=='/'){
+                    subVerify = subVerify.substring(0, o-1);
+                    break;
+                }else if(n=='\\' && m=='/' && k=='/') subVerify = subVerify.substring(0, o-2) + subVerify.substring(o-1, subVerify.length());
+            }
+            if(subVerify.length()==0 || subVerify.toCharArray().length==0 || subVerify.toCharArray()[0]=='\n') continue;
             ++lineCount;
-            if(subVerify.toCharArray().length==0) continue;
             if(!isValidKVPair(subVerify)) throw new MalformedLanguageException("Error found at line "+lineCount
                         +" of "+f.getAbsolutePath()+". Invalid key-value pair detected! Note that ':' in the keys or values must be escaped with '\'");
             String s1 = getKey(subVerify);
@@ -162,8 +185,10 @@ public class Language {
 
     private static String readLine(InputStream i){
         String s = "";
-        char j;
-        try{ while(i.available()>0 && (j=(char)i.read())!='\n' && j!=13) s+=j; }catch(IOException ignored){}
+        try{
+            char j;
+            while(i.available()>0 && (j=(char)i.read())!='\n' && j!=13) s+=j;
+        }catch(IOException ignored){}
         return s;
     }
     private static boolean isValidKVPair(String data){
@@ -197,13 +222,23 @@ public class Language {
     private static String getValue(String data){
         char[] str = truncateLeadingSpaces(data).toCharArray();
         char prev = 0;
+        String p1="", p2="";
         for(int i = str.length-1; i>0; --i) {
             if (i != str.length-1){
-                if(str[i]!='\\' && prev==':')
-                    return data.substring(i+2, str.length);
+                if(str[i]!='\\' && prev==':') {
+                    p1 = data.substring(i + 2, data.length());
+                    break;
+                }
             }
             prev = str[i];
         }
-        return data;
+        str = p1.toCharArray();
+        for(int i = 0; i<p1.length(); ++i){
+            if(i != 0)
+                if(!(str[i]==':' && prev=='\\')) p2+=prev;
+            prev = str[i];
+        }
+        p2+=prev;
+        return p2;
     }
 }
