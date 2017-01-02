@@ -3,8 +3,11 @@ package com.tofvesson.joe;
 import java.io.File;
 import java.lang.reflect.Constructor;
 import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.regex.Pattern;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 @SuppressWarnings({"WeakerAccess", "unused"})
 public class Localization {
@@ -12,6 +15,32 @@ public class Localization {
     private Language defaultLang;
     private List<Language> all = new ArrayList<>();
 
+    public Localization(ZipFile zip, String folder, String regexNamingPattern){ this(zip, folder, regexNamingPattern, true); }
+    public Localization(ZipFile zip, String folder){ this(zip, folder, true); }
+    public Localization(ZipFile zip, String folder, boolean aggressiveLoading){ this(zip, folder, "(.*)", aggressiveLoading); }
+    public Localization(ZipFile zip, String folder, String regexNamingPattern, boolean aggressiveLoading){
+        Pattern p = Pattern.compile(regexNamingPattern);
+        ArrayList<String> files = new ArrayList<>();
+        Enumeration<? extends ZipEntry> e = zip.entries();
+        ZipEntry tmp;
+        while(e.hasMoreElements())
+            if((tmp=e.nextElement()).getName().startsWith(folder) && p.matcher(tmp.getName()).find())
+                files.add(tmp.getName());
+        if(files.size()==0){
+            fixFail();
+            return;
+        }
+
+        try {
+            for (String s : files) {
+                if(defaultLang==null){
+                    defaultLang = Language.parse(zip, s, aggressiveLoading);
+                    all.add(defaultLang);
+                }else all.add(Language.parse(zip, s, aggressiveLoading));
+            }
+        }catch(Exception ignored){}
+
+    }
     public Localization(File folder, String regexNamingPattern){ this(folder, regexNamingPattern, true); }
     public Localization(File folder){ this(folder, true); }
     public Localization(File folder, boolean aggressiveLoading){ this(folder, "(.*)", aggressiveLoading); }

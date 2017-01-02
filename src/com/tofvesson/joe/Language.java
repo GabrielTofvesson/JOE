@@ -6,24 +6,50 @@ import java.io.*;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
-@SuppressWarnings({"WeakerAccess", "unused"})
+@SuppressWarnings({"WeakerAccess", "unused", "ConstantConditions", "SameParameterValue"})
 public class Language {
 
-    private final String language, languageID;
+    private final String language, languageID, entry;
     private Map<String, String> data = new HashMap<>();
     private final File f;
+    private final ZipFile zip;
 
-    private Language(File f, String language, String languageID){ this.f = f; this.language = language; this.languageID = languageID; }
-    private Language(){ f = null; language=""; languageID=""; }
+
+    private Language(ZipFile zip, String entry, String language, String languageID){
+        this.zip = zip;
+        this.entry = entry;
+        this.language = language;
+        this.languageID = languageID;
+        this.f = null;
+    }
+
+    private Language(File f, String language, String languageID){
+        this.f = f;
+        this.language = language;
+        this.languageID = languageID;
+        entry = null;
+        zip = null;
+    }
+
+    private Language(){
+        f = null;
+        language="";
+        languageID="";
+        entry = "";
+        zip = null;
+    }
+
 
     public String getLanguage(){ return language; }
     public String getLanguageIdentifier(){ return languageID; }
     public String get(String key) {
-        if(f==null) return "";
+        if(f==null && zip==null && (entry==null || (entry!=null && entry.equals("")))) return "";
         if(data.containsKey(key) || !f.isFile()) return data.get(key);
         try {
-            InputStream i = new FileInputStream(f);
+            InputStream i = f!=null?new FileInputStream(f):zip.getInputStream(zip.getEntry(entry));
             readLine(i);
             String s, s1="";
             while(i.available()>0){
@@ -71,6 +97,26 @@ public class Language {
     }
 
     /**
+     * Parses data aggressively from zip.
+     * @param zip Zip file to load language data from.
+     * @param entry Entry in zip file.
+     * @return Language or null.
+     */
+    public static @Nullable Language safeParse(ZipFile zip, String entry){ return safeParse(zip, entry, true); }
+
+    /**
+     * A safe version of {@link #parse(ZipFile, String, boolean)} that will simply return <b>null</b> if given file isn't a valid language file.
+     * @param zip Zip file to load language data from.
+     * @param entry Entry in zip file.
+     * @param aggressiveLoading Whether or not to aggressively load and handle data.
+     * @return Language or null.
+     */
+    public static @Nullable Language safeParse(ZipFile zip, String entry, boolean aggressiveLoading){
+        try{ return parse(zip, entry, aggressiveLoading); }catch(Exception ignored){}
+        return null;
+    }
+
+    /**
      * Parses data aggressively.
      * @param f File to read from.
      * @return Language or null.
@@ -91,10 +137,37 @@ public class Language {
     }
 
     /**
+     * Parses the given zip entry into a usable language very aggressively.
+     * @param zip Zip file to load language data from.
+     * @param entry Entry in zip file.
+     * @return Language.
+     * @throws NotALanguageFileException if Zip data isn't a real zip file or entry.
+     * @throws IOException if data can't be read.
+     * @throws MalformedLanguageException if language file isn't specified correctly.
+     */
+    public static Language parse(ZipFile zip, String entry) throws NotALanguageFileException, IOException, MalformedLanguageException { return parse(zip, entry, true); }
+
+    /**
+     * Parses the given zip entry into a usable language.
+     * @param zip Zip file to load language data from.
+     * @param entry Entry in zip file.
+     * @param aggressiveParsing Whether or not to aggressively load and handle data.
+     * @return Language.
+     * @throws NotALanguageFileException Thrown if file isn't a valid language file.
+     * @throws IOException if data can't be read.
+     * @throws MalformedLanguageException if language file isn't specified correctly.
+     */
+    public static Language parse(ZipFile zip, String entry, boolean aggressiveParsing) throws NotALanguageFileException, IOException, MalformedLanguageException {
+        return parse(zip, entry, null, aggressiveParsing);
+    }
+
+    /**
      * Parses the given file into a usable language very aggressively.
      * @param f File to parse.
      * @return Language.
      * @throws NotALanguageFileException Thrown if file isn't a valid language file.
+     * @throws IOException if data can't be read.
+     * @throws MalformedLanguageException if language file isn't specified correctly.
      */
     public static Language parse(File f) throws NotALanguageFileException, IOException, MalformedLanguageException {
         return parse(f, true);
@@ -106,17 +179,34 @@ public class Language {
      * @param aggressiveParsing Whether or not to aggressively load and handle data.
      * @return Language.
      * @throws NotALanguageFileException Thrown if file isn't a valid language file.
+     * @throws IOException if data can't be read.
+     * @throws MalformedLanguageException if language file isn't specified correctly.
      */
-    public static Language parse(File f, boolean aggressiveParsing) throws NotALanguageFileException, MalformedLanguageException, IOException {
-        String s;
-
-
+    public static Language parse(File f, boolean aggressiveParsing) throws NotALanguageFileException, IOException, MalformedLanguageException {
         // Is file existent?
         if(!f.isFile()) throw new FileNotFoundException("File "+f.getAbsolutePath()+" isn't a file!");
+        return parse(null, "", f, aggressiveParsing);
+    }
 
+    /**
+     * Parses the given file or zip entry data into a usable language.
+     * @param zip Zip file to load language data from.
+     * @param entry Entry in zip file.
+     * @param f File to parse.
+     * @param aggressiveParsing Whether or not to aggressively load and handle data.
+     * @return Language.
+     * @throws NotALanguageFileException Thrown if file isn't a valid language file.
+     * @throws IOException if data can't be read.
+     * @throws MalformedLanguageException if language file isn't specified correctly.
+     */
+    private static Language parse(ZipFile zip, String entry, File f, boolean aggressiveParsing) throws NotALanguageFileException, MalformedLanguageException, IOException {
+        String s;
+        ZipEntry z = zip==null?null:zip.getEntry(entry);
+        if(z==null && zip!=null) throw new NotALanguageFileException("File "+zip.getName()+":/"+entry+" isn't a file!");
+
+        InputStream i = zip==null?new FileInputStream(f):zip.getInputStream(zip.getEntry(entry));
 
         // Does file meet preliminary requirements?
-        InputStream i = new FileInputStream(f);
         s = ignoreSpaces(readLine(i));
         i.close();
         for(int j=0; j<s.length(); ++j)
@@ -131,11 +221,12 @@ public class Language {
         if(start==-1 || end==-1 || start>=end) throw new NotALanguageFileException("Malformed language name definition: \""+s+"\"");
 
 
-        Language l = new Language(f, s.substring(start, end), f.getName().substring(0, f.getName().lastIndexOf('.')));
+        Language l = zip==null ? new Language(f, s.substring(start, end), f.getName().substring(0, f.getName().lastIndexOf('.')))
+                : new Language(zip, entry, s.substring(start, end), f.getName().substring(0, f.getName().lastIndexOf('.')));
 
         // Check language integrity
         ArrayList<String> keys = new ArrayList<>();
-        i = new FileInputStream(f);
+        i = zip==null?new FileInputStream(f):zip.getInputStream(zip.getEntry(entry));
         String subVerify;
         boolean firstLine = true;
         char read;
@@ -161,7 +252,7 @@ public class Language {
             if(subVerify.length()==0 || subVerify.toCharArray().length==0 || subVerify.toCharArray()[0]=='\n') continue;
             ++lineCount;
             if(!isValidKVPair(subVerify)) throw new MalformedLanguageException("Error found at line "+lineCount
-                        +" of "+f.getAbsolutePath()+". Invalid key-value pair detected! Note that ':' in the keys or values must be escaped with '\'");
+                    +" of "+f.getAbsolutePath()+". Invalid key-value pair detected! Note that ':' in the keys or values must be escaped with '\'");
             String s1 = getKey(subVerify);
             if(keys.contains(s1)) throw new MalformedLanguageException("Error found at line "+lineCount+" : "
                     +subVerify+"\nDuplicate key detected!");
