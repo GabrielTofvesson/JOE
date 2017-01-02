@@ -47,13 +47,14 @@ public class Language {
     public String getLanguageIdentifier(){ return languageID; }
     public String get(String key) {
         if(f==null && zip==null && (entry==null || (entry!=null && entry.equals("")))) return "";
-        if(data.containsKey(key) || !f.isFile()) return data.get(key);
+        if(data.containsKey(key))
+            return data.get(key);
         try {
             InputStream i = f!=null?new FileInputStream(f):zip.getInputStream(zip.getEntry(entry));
             readLine(i);
-            String s, s1="";
+            String s, s1="", s2="";
             while(i.available()>0){
-                if((s1=readLine(i)).equals(key)){
+                if((s2=s1=readLine(i)).equals(key)){
                     char[] c = s1.toCharArray();
                     char n, m=0, k=0;
                     for(int o = 0; o<c.length; ++o){
@@ -69,10 +70,10 @@ public class Language {
                 }
             }
             if(s1.equals(key)){
-                data.put(s1, s=getValue(s1));
+                data.put(s1, s=s2.length()==key.length()+1?"":getValue(s1));
                 return s;
             }
-        } catch (IOException ignored) {}
+        } catch (IOException ignored) { ignored.printStackTrace(); }
         return null;
     }
     public int getInt(String key){
@@ -222,7 +223,7 @@ public class Language {
 
 
         Language l = zip==null ? new Language(f, s.substring(start, end), f.getName().substring(0, f.getName().lastIndexOf('.')))
-                : new Language(zip, entry, s.substring(start, end), f.getName().substring(0, f.getName().lastIndexOf('.')));
+                : new Language(zip, entry, s.substring(start, end), entry.substring(entry.lastIndexOf("/")+1).substring(0, entry.lastIndexOf('.')-entry.substring(0, entry.lastIndexOf("/")).length()-1));
 
         // Check language integrity
         ArrayList<String> keys = new ArrayList<>();
@@ -317,6 +318,7 @@ public class Language {
         for(int i = str.length-1; i>0; --i) {
             if (i != str.length-1){
                 if(str[i]!='\\' && prev==':') {
+                    if(data.indexOf(":")+1==data.length()) return "";
                     p1 = data.substring(i + 2, data.length());
                     break;
                 }
